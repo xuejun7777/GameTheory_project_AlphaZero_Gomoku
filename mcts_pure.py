@@ -1,10 +1,4 @@
 # -*- coding: utf-8 -*-
-"""
-A pure implementation of the Monte Carlo Tree Search (MCTS)
-
-@author: Junxiao Song
-"""
-
 import numpy as np
 import copy
 from operator import itemgetter
@@ -107,7 +101,7 @@ class MCTS(object):
             relying on the prior more.
         """
         self._root = TreeNode(None, 1.0)
-        self._policy = policy_value_fn
+        self._policy = policy_value_fn #TODO: change policy with minmax algo to compare
         self._c_puct = c_puct
         self._n_playout = n_playout
 

@@ -1,11 +1,8 @@
 # -*- coding: utf-8 -*-
-"""
-@author: Junxiao Song
-"""
-
 from __future__ import print_function
 import numpy as np
-
+from graphics import *
+from MinMax import MinMaxAI
 
 class Board(object):
     """board for the game"""
@@ -127,6 +124,14 @@ class Board(object):
 
     def get_current_player(self):
         return self.current_player
+    
+    def inBoard(self, x,y):
+        if(x>=0 and x<=self.width-1 and y>=0 and y<=self.height-1): return True
+        else: return False
+        
+    def downOk(self, x,y):
+        if(self.inBoard(x,y)): return True
+        else: return False
 
 
 class Game(object):
@@ -134,6 +139,9 @@ class Game(object):
 
     def __init__(self, board, **kwargs):
         self.board = board
+        self.minmax = MinMaxAI(board.width, board.height, board.n_in_row)
+        self.mix_strategy = kwargs.get('mix_strategy', None)
+        
 
     def graphic(self, board, player1, player2):
         """Draw the board and show game info"""
@@ -154,6 +162,7 @@ class Game(object):
                 if p == player1:
                     print('X'.center(8), end='')
                 elif p == player2:
+                    print(loc)
                     print('O'.center(8), end='')
                 else:
                     print('_'.center(8), end='')
@@ -187,6 +196,171 @@ class Game(object):
                         print("Game end. Tie")
                 return winner
 
+    def start_self_play(self, player, is_shown=0, temp=1e-3, batch_index=0):
+        """ start a self-play game using a MCTS player, reuse the search tree,
+        and store the self-play data: (state, mcts_probs, z) for training
+        """
+        self.board.init_board()
+        p1, p2 = self.board.players
+        states, mcts_probs, current_players = [], [], []
+        while True:
+            if self.mix_strategy is not None:
+                if(np.random.rand()<self.mix_strategy and batch_index < 1200):
+                    move, move_probs=self.minmax.get_action(self.board,return_prob=1)
+                    player.mcts.update_with_move(move)
+                else:
+                    move, move_probs = player.get_action(self.board,temp=temp,return_prob=1)
+            else:
+                move, move_probs = player.get_action(self.board,temp=temp,return_prob=1)
+            # store the data
+            states.append(self.board.current_state())
+            mcts_probs.append(move_probs)
+            current_players.append(self.board.current_player)
+            # perform a move
+            self.board.do_move(move)
+            if is_shown:
+                self.graphic(self.board, p1, p2)
+            end, winner = self.board.game_end()
+            if end:
+                # winner from the perspective of the current player of each state
+                winners_z = np.zeros(len(current_players), dtype=np.float32)
+                if winner != -1:
+                    winners_z[np.array(current_players) == winner] = 1.0
+                    winners_z[np.array(current_players) != winner] = -1.0
+                # reset MCTS root node
+                player.reset_player()
+                if is_shown:
+                    if winner != -1:
+                        print("Game end. Winner is player:", winner)
+                    else:
+                        print("Game end. Tie")
+                return winner, zip(states, mcts_probs, winners_z)
+
+class Game_UI(object):
+    """game server"""
+
+    def __init__(self, board, win, **kwargs):
+        self.board = board
+        self.list = []
+        self.win = win
+        self.aiFirst = Text(Point(510,100),"")
+        self.manFirst = Text(Point(510,140),"")
+        self.notice = Text(Point(510,290),"") #提示轮到谁落子
+        self.notice.setFill('red')
+        self.last_ai = Text(Point(510,330),"") #AI最后落子点
+        self.last_man = Text(Point(510,370),"") #玩家最后落子点
+        self.QUIT = Text(Point(510,20),"退出")
+        self.QUIT.setFill('red')
+        self.RESTART = Text(Point(510,60),"重玩")
+        self.RESTART.setFill('red')
+        self.width = board.width
+        self.height = board.height
+        self.players = [1, 2]  # player1 and player2
+        self.minmax = MinMaxAI(board.width, board.height)
+        self.mix_strategy = kwargs.get('mix_strategy', None)
+
+    def draw_init(self):
+        for i in range(len(self.list)):
+            self.list[-1].undraw()
+            self.list.pop(-1)
+        self.notice.setText("")
+        self.last_ai.setText("")
+        self.last_man.setText("")
+        
+    def drawWin(self):
+        self.win.setBackground('yellow')
+        self.step_width = int(450 / (self.width - 1))
+        self.step_height = int(450 / (self.height - 1))
+        for i in range(10,461,self.step_width):
+            line=Line(Point(i,10),Point(i,460))
+            line.draw(self.win)
+        for j in range(10,461,self.step_height):
+            line=Line(Point(10,j),Point(460,j))
+            line.draw(self.win)
+        Rectangle(Point(461,5),Point(550,35)).draw(self.win)
+        Rectangle(Point(461,45),Point(550,75)).draw(self.win)
+        Rectangle(Point(461,85),Point(550,115)).draw(self.win)
+        Rectangle(Point(461,125),Point(550,155)).draw(self.win)
+        Rectangle(Point(462,275),Point(558,305)).draw(self.win)
+        Rectangle(Point(462,307),Point(558,395)).draw(self.win)
+        self.aiFirst.draw(self.win)
+        self.manFirst.draw(self.win)
+        self.notice.draw(self.win)
+        self.last_ai.draw(self.win)
+        self.last_man.draw(self.win)
+        self.QUIT.draw(self.win)
+        self.RESTART.draw(self.win)
+
+    def graphic(self, board, player1, player2):
+        """Draw the board and show game info"""
+        width = board.width
+        height = board.height
+
+        print("Player", player1, "with X".rjust(3))
+        print("Player", player2, "with O".rjust(3))
+        print()
+        for x in range(width):
+            print("{0:8}".format(x), end='')
+        print('\r\n')
+        for i in range(height - 1, -1, -1):
+            print("{0:4d}".format(i), end='')
+            for j in range(width):
+                loc = i * width + j
+                p = board.states.get(loc, -1)
+                if p == player1:
+                    print('X'.center(8), end='')
+                elif p == player2:
+                    print(loc)
+                    print('O'.center(8), end='')
+                else:
+                    print('_'.center(8), end='')
+            print('\r\n\r\n')
+
+    def go(self, x,y):
+        c=Circle(Point(10+x*self.step_width,10+y*self.step_height),13)
+        current_player = self.board.get_current_player()
+        # print(current_player, self.start_player)
+        if(self.start_player==current_player): c.setFill('black')
+        else: c.setFill('white')
+
+        c.draw(self.win)
+        self.list.append(c)
+
+    def start_play(self, player1, player2, start_player=0, is_shown=1):
+        self.draw_init()
+        self.drawWin()
+        """start a game between two players"""
+        if start_player not in (0, 1):
+            raise Exception('start_player should be either 0 (player1 first) '
+                            'or 1 (player2 first)')
+        self.board.init_board(start_player)
+        self.start_player = self.players[start_player]
+        p1, p2 = self.board.players
+        player1.set_player_ind(p1)
+        player2.set_player_ind(p2)
+        players = {p1: player1, p2: player2}
+        
+        while True:
+            current_player = self.board.get_current_player()
+            player_in_turn = players[current_player]
+            self.notice.setText(f" {str(player_in_turn)}走棋..")
+            move = player_in_turn.get_action(self.board)
+            loca = self.board.move_to_location(move)
+            # print(loca[1],self.height - loca[0] - 1)
+            # print(move)
+            # print(self.board.availables)
+            self.go(loca[1],self.height - loca[0] - 1)
+            self.board.do_move(move)
+            end, winner = self.board.game_end()
+            if end:
+                if is_shown:
+                    if winner != -1:
+                        print("Game end. Winner is", players[winner])
+                    else:
+                        print("Game end. Tie")
+                return winner
+
+
     def start_self_play(self, player, is_shown=0, temp=1e-3):
         """ start a self-play game using a MCTS player, reuse the search tree,
         and store the self-play data: (state, mcts_probs, z) for training
@@ -195,9 +369,13 @@ class Game(object):
         p1, p2 = self.board.players
         states, mcts_probs, current_players = [], [], []
         while True:
-            move, move_probs = player.get_action(self.board,
-                                                 temp=temp,
-                                                 return_prob=1)
+            if self.mix_strategy is not None:
+                if(np.random.rand()<self.mix_strategy):
+                    move, move_probs=self.minmax.get_action(self.board,return_prob=1)
+                else:
+                    move, move_probs = player.get_action(self.board,temp=temp,return_prob=1)
+            else:
+                move, move_probs = player.get_action(self.board,temp=temp,return_prob=1)
             # store the data
             states.append(self.board.current_state())
             mcts_probs.append(move_probs)
