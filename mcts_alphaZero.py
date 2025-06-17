@@ -1,11 +1,4 @@
 # -*- coding: utf-8 -*-
-"""
-Monte Carlo Tree Search in AlphaGo Zero style, which uses a policy-value
-network to guide the tree search and evaluate the leaf nodes
-
-@author: Junxiao Song
-"""
-
 import numpy as np
 import copy
 
@@ -151,7 +144,7 @@ class MCTS(object):
                       for act, node in self._root._children.items()]
         acts, visits = zip(*act_visits)
         act_probs = softmax(1.0/temp * np.log(np.array(visits) + 1e-10))
-
+        # print("mcts_act",acts)
         return acts, act_probs
 
     def update_with_move(self, last_move):
@@ -186,6 +179,7 @@ class MCTSPlayer(object):
         sensible_moves = board.availables
         # the pi vector returned by MCTS as in the alphaGo Zero paper
         move_probs = np.zeros(board.width*board.height)
+        #TODO: Add action generated through maxmin search
         if len(sensible_moves) > 0:
             acts, probs = self.mcts.get_move_probs(board, temp)
             move_probs[list(acts)] = probs
